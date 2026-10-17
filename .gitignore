@@ -1,4 +1,5 @@
 .workbuddy/
+backup/
 *.genie
 .DS_Store
 Thumbs.db
