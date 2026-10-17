@@ -614,6 +614,95 @@ body {
   cursor: pointer;
 }
 
+/* ===== Backup / Restore ===== */
+.backup-stats {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-bottom: 10px;
+  text-align: center;
+}
+.backup-steps {
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.7;
+  background: #f8fafc;
+  border-left: 3px solid #667eea;
+  border-radius: 6px;
+  padding: 9px 11px;
+  margin-bottom: 12px;
+}
+.backup-steps b { color: var(--text); }
+.backup-text {
+  width: 100%;
+  height: 100px;
+  padding: 9px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  line-height: 1.5;
+  color: var(--text-light);
+  background: #f8fafc;
+  resize: vertical;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+.backup-text:focus { border-color: #667eea; }
+.backup-primary {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  margin-bottom: 8px;
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.28);
+}
+.backup-primary:active { transform: scale(0.98); }
+.backup-secondary-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.backup-secondary-row button {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid var(--border);
+  background: white;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.backup-hint {
+  font-size: 11px;
+  color: var(--text-light);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.merge-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+.merge-option input {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: #667eea;
+}
+
 /* Toast */
 .toast {
   position: fixed;
@@ -660,9 +749,8 @@ body {
     </div>
     <div class="header-actions">
       <button onclick="openSettings()">设置</button>
-      <button onclick="exportData()">备份</button>
-      <button onclick="document.getElementById('importFile').click()">恢复</button>
-      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      <button onclick="openExportModal()">备份</button>
+      <button onclick="openImportModal()">恢复</button>
     </div>
   </div>
 </div>
@@ -761,6 +849,50 @@ body {
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ===== Export Modal ===== -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal">
+    <h3>备份数据</h3>
+    <div class="backup-stats" id="exportStats"></div>
+    <div class="backup-steps">
+      <b>手机上请用「复制」</b>：复制后粘贴到微信文件传输助手、备忘录，或发给自己保存。部分手机浏览器的下载/分享功能会失败，复制是最稳的方式。
+    </div>
+    <textarea class="backup-text" id="exportText" readonly onclick="this.select()"></textarea>
+    <button class="backup-primary" onclick="copyBackup()">复制备份内容</button>
+    <div class="backup-secondary-row">
+      <button onclick="shareBackup()">系统分享</button>
+      <button onclick="downloadBackup()">下载文件</button>
+    </div>
+    <div class="backup-hint">数据只保存在这台设备的浏览器里，清理浏览器数据会清空记录，建议每周备份一次。</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExportModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Import Modal ===== -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal">
+    <h3>恢复数据</h3>
+    <div class="backup-steps">
+      把之前备份的 JSON 内容<b>全部粘贴</b>到下面的文本框，再点「恢复数据」。
+    </div>
+    <textarea class="backup-text" id="importText" placeholder='粘贴以 {"records": 开头的内容…'></textarea>
+    <label class="merge-option">
+      <input type="checkbox" id="importMerge" checked>
+      <span>合并导入（保留现有记录，只补充没有的记录；取消勾选则整份覆盖）</span>
+    </label>
+    <button class="backup-primary" onclick="importFromText()">恢复数据</button>
+    <div class="backup-secondary-row">
+      <button onclick="document.getElementById('importFile').click()">从文件恢复</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importData(event)">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeImportModal()">关闭</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ===================== Data =====================
@@ -1399,51 +1531,167 @@ function saveSettings() {
 }
 
 // ===================== Export / Import =====================
-function exportData() {
-  const data = {
+function getBackupData() {
+  return {
     records: records,
     settings: settings,
     settledWeeks: getSettledWeeks(),
     exportDate: new Date().toISOString()
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = '家务奖惩记录_备份_' + todayStr() + '.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('备份文件已下载');
+}
+
+function getBackupJSON() {
+  return JSON.stringify(getBackupData(), null, 2);
+}
+
+function backupFileName() {
+  return '家务奖惩记录_备份_' + todayStr() + '.json';
+}
+
+function openExportModal() {
+  const json = getBackupJSON();
+  document.getElementById('exportText').value = json;
+  document.getElementById('exportStats').textContent =
+    '共 ' + records.length + ' 条记录 · ' + settings.children.map(c => c.name).join(' / ') +
+    ' · 约 ' + Math.max(1, Math.round(json.length / 1024)) + ' KB';
+  document.getElementById('exportModal').classList.add('show');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.remove('show');
+}
+
+function copyBackup() {
+  const text = getBackupJSON();
+  const done = () => showToast('已复制，去粘贴保存吧');
+  const fallback = () => {
+    const ta = document.getElementById('exportText');
+    ta.focus();
+    ta.setSelectionRange(0, ta.value.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    if (ok) done();
+    else showToast('复制失败，请长按文本框全选后手动复制');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+async function shareBackup() {
+  const text = getBackupJSON();
+  const name = backupFileName();
+  try {
+    const file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: '家务奖惩记录备份' });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: '家务奖惩记录备份', text: text });
+      return;
+    }
+    showToast('此浏览器不支持系统分享，请用「复制备份内容」');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    showToast('分享未成功，请用「复制备份内容」');
+  }
+}
+
+function downloadBackup() {
+  const text = getBackupJSON();
+  const name = backupFileName();
+  try {
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(text);
+    a.download = name;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 1000);
+    showToast('已发起下载，若没反应请改用「复制」');
+  } catch (e) {
+    showToast('下载失败，请改用「复制备份内容」');
+  }
+}
+
+function openImportModal() {
+  document.getElementById('importText').value = '';
+  document.getElementById('importModal').classList.add('show');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('show');
+}
+
+function importFromText() {
+  const raw = document.getElementById('importText').value.trim();
+  if (!raw) { showToast('请先粘贴备份内容'); return; }
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (e) {
+    showToast('内容不完整或格式不正确，请确认整段都粘贴了');
+    return;
+  }
+  applyImport(data);
 }
 
 function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (data.records) {
-        records = data.records;
-        saveRecords();
-      }
-      if (data.settings) {
-        settings = data.settings;
-        saveSettings();
-      }
-      if (data.settledWeeks) {
-        localStorage.setItem(SETTLED_KEY, JSON.stringify(data.settledWeeks));
-      }
-      renderChildSelector();
-      renderItemList();
-      renderTodayRecords();
-      showToast('数据恢复成功');
-    } catch(err) {
-      showToast('文件格式错误');
-    }
+  reader.onload = function (e) {
+    try { applyImport(JSON.parse(e.target.result)); }
+    catch (err) { showToast('文件内容不是有效的备份'); }
   };
   reader.readAsText(file);
   event.target.value = '';
+}
+
+function applyImport(data) {
+  if (!data || !Array.isArray(data.records)) {
+    showToast('备份内容里没有找到记录数据');
+    return;
+  }
+  const mergeBox = document.getElementById('importMerge');
+  const merge = mergeBox ? mergeBox.checked : true;
+
+  if (merge) {
+    const existing = new Set(records.map(r => r.id));
+    let added = 0;
+    data.records.forEach(r => {
+      if (r && r.id && !existing.has(r.id)) {
+        records.push(r);
+        existing.add(r.id);
+        added++;
+      }
+    });
+    saveRecords();
+    showToast(added > 0 ? ('已合并 ' + added + ' 条新记录') : '没有发现新记录');
+  } else {
+    if (!confirm('覆盖导入会替换当前全部 ' + records.length + ' 条记录，确定继续吗？')) return;
+    records = data.records;
+    saveRecords();
+    if (data.settings && Array.isArray(data.settings.children) && data.settings.children.length) {
+      settings = data.settings;
+      saveSettings();
+    }
+    if (Array.isArray(data.settledWeeks)) {
+      localStorage.setItem(SETTLED_KEY, JSON.stringify(data.settledWeeks));
+    }
+    showToast('已恢复 ' + records.length + ' 条记录');
+  }
+
+  closeImportModal();
+  if (currentChild >= settings.children.length) currentChild = 0;
+  renderDate();
+  renderChildSelector();
+  renderItemList();
+  renderTodayRecords();
+  if (document.getElementById('page-history').classList.contains('active')) renderHistory();
+  if (document.getElementById('page-weekly').classList.contains('active')) renderWeekly();
 }
 
 // ===================== Init =====================
@@ -1459,6 +1707,12 @@ document.getElementById('amountModal').addEventListener('click', (e) => {
 });
 document.getElementById('settingsModal').addEventListener('click', (e) => {
   if (e.target.id === 'settingsModal') closeSettings();
+});
+document.getElementById('exportModal').addEventListener('click', (e) => {
+  if (e.target.id === 'exportModal') closeExportModal();
+});
+document.getElementById('importModal').addEventListener('click', (e) => {
+  if (e.target.id === 'importModal') closeImportModal();
 });
 
 // Enter key in amount input confirms
