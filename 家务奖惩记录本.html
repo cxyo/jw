@@ -233,6 +233,9 @@ body {
   border-radius: 16px;
   width: 90%;
   max-width: 380px;
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 20px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
@@ -703,6 +706,15 @@ body {
   accent-color: #667eea;
 }
 
+/* iOS：输入框字号小于 16px 会自动放大页面，这里单独放大避免错位 */
+@supports (-webkit-touch-callout: none) {
+  .backup-text {
+    font-size: 16px;
+    line-height: 1.45;
+    height: 130px;
+  }
+}
+
 /* Toast */
 .toast {
   position: fixed;
@@ -856,9 +868,11 @@ body {
     <h3>备份数据</h3>
     <div class="backup-stats" id="exportStats"></div>
     <div class="backup-steps">
-      <b>手机上请用「复制」</b>：复制后粘贴到微信文件传输助手、备忘录，或发给自己保存。部分手机浏览器的下载/分享功能会失败，复制是最稳的方式。
+      <b>手机上（安卓 / 苹果都一样）请用「复制」</b>：复制后粘贴到微信文件传输助手、备忘录，或发给自己保存。<br>
+      · 苹果手机「下载文件」会存到「文件」App 的「下载」文件夹里，同样可用。<br>
+      · 微信里打开本页面时，分享功能可能受限，直接用复制最稳。
     </div>
-    <textarea class="backup-text" id="exportText" readonly onclick="this.select()"></textarea>
+    <textarea class="backup-text" id="exportText" readonly onclick="this.select()" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
     <button class="backup-primary" onclick="copyBackup()">复制备份内容</button>
     <div class="backup-secondary-row">
       <button onclick="shareBackup()">系统分享</button>
@@ -878,7 +892,7 @@ body {
     <div class="backup-steps">
       把之前备份的 JSON 内容<b>全部粘贴</b>到下面的文本框，再点「恢复数据」。
     </div>
-    <textarea class="backup-text" id="importText" placeholder='粘贴以 {"records": 开头的内容…'></textarea>
+    <textarea class="backup-text" id="importText" placeholder='粘贴以 {"records": 开头的内容…' autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
     <label class="merge-option">
       <input type="checkbox" id="importMerge" checked>
       <span>合并导入（保留现有记录，只补充没有的记录；取消勾选则整份覆盖）</span>
@@ -896,6 +910,7 @@ body {
 
 <script>
 // ===================== Data =====================
+const APP_VERSION = 'v1.1.1';
 const STORAGE_KEY = 'chore_reward_records_v1';
 const SETTINGS_KEY = 'chore_reward_settings_v1';
 
@@ -1049,7 +1064,7 @@ function renderDate() {
   const d = new Date();
   const weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
   document.getElementById('todayDate').textContent =
-    d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 '+weekdays[d.getDay()];
+    d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 '+weekdays[d.getDay()]+' · '+APP_VERSION;
 }
 
 // ===================== Render: Child Selector =====================
@@ -1553,7 +1568,7 @@ function openExportModal() {
   document.getElementById('exportText').value = json;
   document.getElementById('exportStats').textContent =
     '共 ' + records.length + ' 条记录 · ' + settings.children.map(c => c.name).join(' / ') +
-    ' · 约 ' + Math.max(1, Math.round(json.length / 1024)) + ' KB';
+    ' · 约 ' + Math.max(1, Math.round(json.length / 1024)) + ' KB · ' + APP_VERSION;
   document.getElementById('exportModal').classList.add('show');
 }
 
@@ -1566,12 +1581,16 @@ function copyBackup() {
   const done = () => showToast('已复制，去粘贴保存吧');
   const fallback = () => {
     const ta = document.getElementById('exportText');
+    // 部分 iOS / 微信内核要求元素可编辑才能 execCommand 复制
+    const wasReadonly = ta.readOnly;
+    ta.readOnly = false;
     ta.focus();
     ta.setSelectionRange(0, ta.value.length);
     let ok = false;
-    try { ok = document.execCommand('copy'); } catch (e) {}
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.readOnly = wasReadonly;
     if (ok) done();
-    else showToast('复制失败，请长按文本框全选后手动复制');
+    else showToast('复制失败，请长按文本框 → 全选 → 拷贝');
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(fallback);
@@ -1627,8 +1646,13 @@ function closeImportModal() {
 }
 
 function importFromText() {
-  const raw = document.getElementById('importText').value.trim();
+  let raw = document.getElementById('importText').value.trim();
   if (!raw) { showToast('请先粘贴备份内容'); return; }
+  // iOS 智能标点会把直引号换成弯引号，这里统一还原，避免解析失败
+  raw = raw
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/\u00A0/g, ' ');
   let data;
   try { data = JSON.parse(raw); }
   catch (e) {
